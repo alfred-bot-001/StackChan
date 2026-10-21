@@ -122,6 +122,17 @@ struct XiaozhiConfig_t {
 };
 
 /**
+ * @brief Home Link (LAN control interface, home-link fork)
+ */
+struct HomeLinkInfo {
+    bool enabled = true;
+    bool running = false;
+    std::string ip;
+    uint16_t port = 8700;
+    std::string token;
+};
+
+/**
  * @brief
  *
  */
@@ -302,6 +313,20 @@ public:
     std::string startMicTest(std::function<void(MicTestStatus)> onStatusUpdate);
     void getMicWaveformFrame(std::vector<int16_t>& data);
     void clearupMicTest();
+
+    /* -------------------------------- Home Link ------------------------------- */
+    void startHomeLink();
+    void stopHomeLink();
+    bool isHomeLinkRunning();
+    HomeLinkInfo getHomeLinkInfo();
+    void regenerateHomeLinkToken();
+    void setHomeLinkEnabled(bool enabled);
+    void setCurrentAppName(std::string_view name);
+    std::string getCurrentAppName();
+    void setHomeAppActive(bool active, std::function<void()> restoreDefaultModifiers);
+    bool isHomeAppActive();
+    uint32_t homeLinkLastMotionTick();
+    bool homeLinkStartedNetwork();
 
 private:
     bool _xiaozhi_start_requested = false;

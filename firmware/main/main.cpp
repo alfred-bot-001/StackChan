@@ -39,6 +39,9 @@ extern "C" void app_main(void)
         GetMooncake().installApp(std::make_unique<AppEzdata>());
         GetMooncake().installApp(std::make_unique<AppDance>());
         GetMooncake().installApp(std::make_unique<AppSetup>());
+        GetMooncake().installApp(std::make_unique<AppHomeLink>());  // index 7 (home-link fork)
+
+        GetHAL().startHomeLink();
 
         // Main loop
         while (1) {
@@ -58,5 +61,7 @@ extern "C" void app_main(void)
     }
 
     // Start xiaozhi, never returns
+    GetHAL().setCurrentAppName("AI.AGENT");
+    GetHAL().startHomeLink();
     GetHAL().startXiaozhi();
 }

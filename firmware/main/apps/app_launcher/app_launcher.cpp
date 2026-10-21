@@ -24,6 +24,8 @@ void AppLauncher::onLauncherOpen()
 {
     mclog::tagInfo(getAppInfo().name, "on open");
 
+    GetHAL().setCurrentAppName("LAUNCHER");
+
     LvglLockGuard lock;
 
     if (!_startup_checked && GetHAL().consumeAppSetupRequest()) {
@@ -76,6 +78,9 @@ void AppLauncher::create_launcher_view()
     _view->init(getAppProps());
     _view->onAppClicked = [&](int appID) {
         mclog::tagInfo(getAppInfo().name, "handle open app, app id: {}", appID);
+        for (const auto& props : getAppProps()) {
+            if (props.appID == appID) GetHAL().setCurrentAppName(props.info.name);
+        }
         openApp(appID);
     };
 }

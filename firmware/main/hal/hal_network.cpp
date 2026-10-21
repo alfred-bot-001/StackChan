@@ -105,7 +105,11 @@ void Hal::startNetwork(std::function<void(std::string_view)> onLog)
             }
         });
     const uint32_t started_at = millis();
-    board.StartNetwork();
+    if (!homeLinkStartedNetwork()) {
+        board.StartNetwork();
+    } else {
+        mclog::tagInfo(_tag, "network already started by home link, waiting");
+    }
 
     while (!network_connected && !WifiManager::GetInstance().IsConnected()) {
         // WifiBoard normally handles a 60s timeout. Keep this caller bounded

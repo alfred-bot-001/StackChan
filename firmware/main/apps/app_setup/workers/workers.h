@@ -466,4 +466,24 @@ private:
     std::unique_ptr<FactoryResetWorker> _worker_reset;
 };
 
+/**
+ * @brief Setup › Home Link (LAN control interface of the home-link fork)
+ */
+class HomeLinkWorker : public WorkerBase {
+public:
+    HomeLinkWorker();
+    void update() override;
+
+private:
+    std::unique_ptr<uitk::lvgl_cpp::Container> _panel;
+    std::unique_ptr<uitk::lvgl_cpp::Label> _title, _address, _token, _state;
+    std::unique_ptr<uitk::lvgl_cpp::Button> _btn_regenerate, _btn_toggle, _btn_back;
+    bool _regenerate_clicked = false;
+    bool _regenerate_armed   = false;
+    bool _toggle_clicked     = false;
+    bool _enabled            = true;
+    uint32_t _last_refresh   = 0;
+    void refresh();
+};
+
 }  // namespace setup_workers

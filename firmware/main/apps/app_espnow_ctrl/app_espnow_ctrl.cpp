@@ -60,6 +60,9 @@ void AppEspnowControl::onOpen()
     mclog::tagInfo(getAppInfo().name, "get setup: role {}, id {}, channel {}", _is_receiver ? "Receiver" : "Sender",
                    _receiver_id, _wifi_channel);
 
+    // Home Link's station mode would fight ESP-NOW channel control
+    GetHAL().stopHomeLink();
+
     // Start espnow
     GetHAL().startEspNow(_wifi_channel);
     GetHAL().onEspNowData.connect([](const std::vector<uint8_t>& data) {

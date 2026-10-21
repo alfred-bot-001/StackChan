@@ -1,3 +1,5 @@
+> **自用 fork（alfred-bot-001）**：本仓库是 [m5stack/StackChan](https://github.com/m5stack/StackChan) 的 fork，分支 `home-link` 在固件里加了局域网控制接口 Home Link（见 [docs/home-link.md](docs/home-link.md)），供 AI_Home 家庭控制台使用。改动只在本仓库维护，不向上游提交。
+
 # StackChan Open-Source
 
 <img src="https://m5stack-doc.oss-cn-shenzhen.aliyuncs.com/1205/K151_stack_chan_main_pictures_01.webp" width="60%">
