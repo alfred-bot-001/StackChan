@@ -66,3 +66,5 @@ sdkconfig.old
 sdkconfig.defaults.local
 
 xiaozhi-esp32/
+.component-cache/
+build-host-tests/
