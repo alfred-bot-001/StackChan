@@ -48,11 +48,11 @@
 ```sh
 ./firmware/docker-build.sh build          # espressif/idf:v5.5.4 镜像内 fetch_repos.py + idf.py build
 ./firmware/docker-build.sh merge          # 合并成 build/stack-chan-merged.bin
-./firmware/docker-build.sh flash /dev/cu.usbmodemXXXX   # 设备按住 RST 3 秒进下载模式
+./firmware/docker-build.sh flash /dev/cu.usbmodemXXXX   # 按偏移分段写入，不动 NVS；USB-Serial/JTAG 可自动进下载模式
 cd firmware && cmake -S tests -B build-host-tests && cmake --build build-host-tests && ctest --test-dir build-host-tests
 ```
 
-NVS 在烧录时保留（Wi-Fi、小智配置、令牌都在）；`esptool erase_flash` 会清掉。恢复出厂固件：M5Burner v3 搜索「StackChan」，勾选 Only Official，Download → Burn。
+`flash` 按 `flash_args` 分段写入，NVS（0x9000，Wi-Fi、小智配置、App 绑定标记、令牌）保留。**不要把合并镜像写到 0x0**（`flash-full`）：merge-bin 用 0xFF 填充间隙，会把 NVS 清空，设备会回到首次配网流程；万一清了，用 `esptool read-flash 0x9000 0x4000` 事先留的备份写回 0x9000。恢复出厂固件：M5Burner v3 搜索「StackChan」，勾选 Only Official，Download → Burn。
 
 ## 自建固件上已知失效的功能
 

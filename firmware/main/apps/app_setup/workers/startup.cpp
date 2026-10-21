@@ -63,6 +63,9 @@ void StartupWorker::update()
     // Startup page
     if (_page_startup) {
         if (_page_startup->isSkipClicked()) {
+            // home-link fork: App binding is impossible here, so Skip is final and boots straight
+            // into the launcher next time instead of repeating the welcome flow.
+            GetHAL().markAppConfiged();
             mclog::tagInfo(_tag, "startup skipped");
             _is_done = true;
         } else if (_page_startup->isStartClicked()) {

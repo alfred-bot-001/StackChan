@@ -613,6 +613,12 @@ bool Hal::isAppConfiged()
     return settings.GetBool("is_configed", false);
 }
 
+void Hal::markAppConfiged()
+{
+    Settings settings("app_config", true);
+    settings.SetBool("is_configed", true);
+}
+
 void Hal::resetAppConfiged()
 {
     Settings settings("app_config", true);

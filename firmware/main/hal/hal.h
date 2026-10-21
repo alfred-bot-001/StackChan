@@ -238,6 +238,7 @@ public:
     void startAppConfigServer();
     bool isAppConfiged();
     void resetAppConfiged();
+    void markAppConfiged();  // home-link fork: Skip on the welcome page
 
     /* --------------------------------- HeadPet -------------------------------- */
     uitk::Signal<HeadPetGesture> onHeadPetGesture;

@@ -16,6 +16,7 @@
 #include <ArduinoJson.hpp>
 #include <settings.h>
 #include <wifi_manager.h>
+#include <ssid_manager.h>
 #include <board.h>
 #include <jpg/image_to_jpeg.h>
 #include <esp_random.h>
@@ -306,8 +307,10 @@ void home_link_task(void*)
         }
 
         if (!network_kicked && !hal.getXiaozhiConfig().startAiAgentOnBoot && !wifi.IsConnected() &&
-            !wifi.IsConfigMode() && hal.isAppConfiged()) {
-            // Launcher does not bring Wi-Fi up by itself; Home Link needs it.
+            !wifi.IsConfigMode() && hal.millis() > 8000 && !SsidManager::GetInstance().GetSsidList().empty()) {
+            // Without saved credentials the board would open the App-setup flow and reboot; leave it alone.
+            // Launcher does not bring Wi-Fi up by itself; Home Link needs it. Not gated on the
+            // App-binding flag: a factory NVS may not carry it and binding is impossible on this fork.
             network_kicked        = true;
             _network_started_by_us = true;
             mclog::tagInfo(_tag, "starting network for home link");
