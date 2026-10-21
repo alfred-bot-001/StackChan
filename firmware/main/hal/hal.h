@@ -328,6 +328,7 @@ public:
     bool isHomeAppActive();
     uint32_t homeLinkLastMotionTick();
     bool homeLinkStartedNetwork();
+    bool consumeHomeLinkAutoOpenHome();  // set by POST /v1/system/open-home before the warm reboot
 
 private:
     bool _xiaozhi_start_requested = false;

@@ -76,6 +76,17 @@ void AppLauncher::create_launcher_view()
 {
     _view = std::make_unique<view::LauncherView>();
     _view->init(getAppProps());
+    if (GetHAL().consumeHomeLinkAutoOpenHome()) {
+        // home-link fork: POST /v1/system/open-home lands here after the warm reboot
+        for (const auto& props : getAppProps()) {
+            if (props.info.name == "HOME") {
+                mclog::tagInfo(getAppInfo().name, "home link requested HOME app, opening");
+                GetHAL().setCurrentAppName("HOME");
+                openApp(props.appID);
+                break;
+            }
+        }
+    }
     _view->onAppClicked = [&](int appID) {
         mclog::tagInfo(getAppInfo().name, "handle open app, app id: {}", appID);
         for (const auto& props : getAppProps()) {

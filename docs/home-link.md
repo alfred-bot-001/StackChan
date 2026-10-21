@@ -25,7 +25,7 @@
 | `POST /v1/neon {leftRgbColor,rightRgbColor,leftRgbDuration,rightRgbDuration}` | 仅 HOME | 同 `updateNeonLightFromJson` |
 | `POST /v1/dance [keyframes]` | 仅 HOME | 同跳舞序列 JSON（数组） |
 | `DELETE /v1/modifiers` | 仅 HOME | 清掉跳舞/定时表情，恢复默认空闲行为 |
-| `GET /v1/camera/snapshot` | 仅 HOME | 一帧 JPEG |
+| `GET /v1/camera/snapshot` | 仅 HOME | 一帧 JPEG（实测 320×240，质量 20，约 2–5 KB） |
 | `WS /v1/events` | 是 | 每 5 秒 `{"type":"status","status":{...}}`；即时 `head_pet`、`imu`、`app`、`battery`；发 `{"type":"camera","enabled":true}` 后每 200 ms 收一帧二进制 JPEG（仅 HOME） |
 
 写命令可带 `command_id`（8–64 位 `[A-Za-z0-9_.:-]`，首字符字母或数字），响应 `{"command_id":"...","state":"accepted"|"completed"}`。音量/亮度/灯/提示音/表情/文字/上卸力/灯带/清 modifier 同步生效（`completed`）；头部移动/回零/看向/跳舞/重启/进 HOME 异步（`accepted`），是否到位看 `status.motion.moving`。

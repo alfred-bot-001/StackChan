@@ -34,6 +34,7 @@ static const std::string_view _tag       = "HAL-HomeLink";
 static constexpr const char* _nvs_ns     = "home_link";
 static constexpr const char* _nvs_token  = "token";
 static constexpr const char* _nvs_enable = "enabled";
+static constexpr const char* _nvs_auto_home = "auto_home";
 static constexpr int kHomeAppIndex       = 7;
 
 namespace {
@@ -182,6 +183,10 @@ HandlerResult handle_command(const Parsed& p)
             return done("accepted");
         case Command::OpenHome:
             if (_home_active.load()) return done("completed");
+            {
+                Settings settings(_nvs_ns, true);
+                settings.SetBool(_nvs_auto_home, true);
+            }
             _pending_reboot = kHomeAppIndex;
             return done("accepted");
         case Command::Snapshot:
@@ -306,8 +311,8 @@ void home_link_task(void*)
             hal.requestWarmReboot(target);
         }
 
-        if (!network_kicked && !hal.getXiaozhiConfig().startAiAgentOnBoot && !wifi.IsConnected() &&
-            !wifi.IsConfigMode() && hal.millis() > 8000 && !SsidManager::GetInstance().GetSsidList().empty()) {
+        if (!network_kicked && !wifi.IsInitialized() && !wifi.IsConnected() && !wifi.IsConfigMode() &&
+            hal.millis() > 8000 && !SsidManager::GetInstance().GetSsidList().empty()) {
             // Without saved credentials the board would open the App-setup flow and reboot; leave it alone.
             // Launcher does not bring Wi-Fi up by itself; Home Link needs it. Not gated on the
             // App-binding flag: a factory NVS may not carry it and binding is impossible on this fork.
@@ -452,6 +457,14 @@ bool Hal::isHomeAppActive()
 uint32_t Hal::homeLinkLastMotionTick()
 {
     return _last_motion_tick.load();
+}
+
+bool Hal::consumeHomeLinkAutoOpenHome()
+{
+    Settings settings(_nvs_ns, true);
+    const bool flag = settings.GetBool(_nvs_auto_home, false);
+    if (flag) settings.SetBool(_nvs_auto_home, false);
+    return flag;
 }
 
 bool Hal::homeLinkStartedNetwork()
