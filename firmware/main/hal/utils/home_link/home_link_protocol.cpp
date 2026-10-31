@@ -358,6 +358,18 @@ std::string error_json_with_app(std::string_view code, std::string_view message,
     return out;
 }
 
+std::string error_json_conversation(std::string_view current_app, std::string_view conversation)
+{
+    ArduinoJson::JsonDocument doc;
+    doc["error"]        = "conversation_active";
+    doc["message"]      = "xiaozhi is in a conversation; retry when idle";
+    doc["current_app"]  = current_app;
+    doc["conversation"] = conversation;
+    std::string out;
+    ArduinoJson::serializeJson(doc, out);
+    return out;
+}
+
 std::string result_json(std::string_view command_id, std::string_view state)
 {
     ArduinoJson::JsonDocument doc;

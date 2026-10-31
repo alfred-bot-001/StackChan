@@ -50,6 +50,17 @@ void xiaozhi_board_init();
 void start_xiaozhi_app();
 bool is_xiaozhi_ready();
 bool is_xiaozhi_idle();
+
+/// Coarse Xiaozhi activity for the Home Link arbitration (home-link fork).
+enum class XiaozhiActivity {
+    Off,           // Xiaozhi app not running (launcher, HOME, Setup, ...)
+    Starting,      // starting / activating / upgrading / error: avatar may exist, no conversation
+    Idle,          // standby: LAN commands may drive the avatar
+    Conversation,  // connecting / listening / speaking: LAN avatar commands are refused
+};
+XiaozhiActivity xiaozhi_activity();
+/// Stable lower-case name for status JSON: off, starting, idle, connecting, listening, speaking, ...
+const char* xiaozhi_activity_name();
 XiaozhiConfig_t get_xiaozhi_config();
 void set_xiaozhi_config(const XiaozhiConfig_t& config);
 

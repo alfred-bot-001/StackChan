@@ -124,6 +124,10 @@ static void test_misc()
     CHECK(result_json("", "completed") == "{\"state\":\"completed\"}");
     CHECK(error_json("unauthorized", "bad token") == "{\"error\":\"unauthorized\",\"message\":\"bad token\"}");
     CHECK(error_json_with_app("home_app_not_active", "m", "AI.AGENT").find("\"current_app\":\"AI.AGENT\"") != std::string::npos);
+    const std::string busy = error_json_conversation("AI.AGENT", "speaking");
+    CHECK(busy.find("\"error\":\"conversation_active\"") != std::string::npos);
+    CHECK(busy.find("\"current_app\":\"AI.AGENT\"") != std::string::npos);
+    CHECK(busy.find("\"conversation\":\"speaking\"") != std::string::npos);
     const uint8_t bytes[4] = {0x00, 0xab, 0xff, 0x10};
     CHECK(make_token_hex(bytes, 4) == "00abff10");
     CHECK(valid_command_id("console-abcdef0123456789"));

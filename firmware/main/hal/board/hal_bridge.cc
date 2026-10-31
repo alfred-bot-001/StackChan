@@ -119,6 +119,40 @@ void start_xiaozhi_app()
     app.Run();  // This function runs the main event loop and never returns
 }
 
+XiaozhiActivity xiaozhi_activity()
+{
+    if (!is_xiaozhi_mode()) return XiaozhiActivity::Off;
+    switch (Application::GetInstance().GetDeviceState()) {
+        case kDeviceStateIdle:
+            return XiaozhiActivity::Idle;
+        case kDeviceStateConnecting:
+        case kDeviceStateListening:
+        case kDeviceStateSpeaking:
+        case kDeviceStateAudioTesting:
+            return XiaozhiActivity::Conversation;
+        default:
+            return XiaozhiActivity::Starting;
+    }
+}
+
+const char* xiaozhi_activity_name()
+{
+    if (!is_xiaozhi_mode()) return "off";
+    switch (Application::GetInstance().GetDeviceState()) {
+        case kDeviceStateIdle: return "idle";
+        case kDeviceStateConnecting: return "connecting";
+        case kDeviceStateListening: return "listening";
+        case kDeviceStateSpeaking: return "speaking";
+        case kDeviceStateAudioTesting: return "audio_testing";
+        case kDeviceStateStarting: return "starting";
+        case kDeviceStateWifiConfiguring: return "wifi_configuring";
+        case kDeviceStateUpgrading: return "upgrading";
+        case kDeviceStateActivating: return "activating";
+        case kDeviceStateFatalError: return "error";
+        default: return "unknown";
+    }
+}
+
 XiaozhiConfig_t get_xiaozhi_config()
 {
     XiaozhiConfig_t config;

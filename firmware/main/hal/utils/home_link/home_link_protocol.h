@@ -86,7 +86,8 @@ bool validate_bearer(std::string_view header_value, std::string_view token);
 /// Map method + URI (query string ignored) + JSON body to a validated command.
 Parsed parse_request(std::string_view method, std::string_view uri, std::string_view body);
 
-/// Commands that only work while the HOME app is active.
+/// Commands that drive the avatar/motion/camera. They need an avatar on screen (HOME or AI.AGENT
+/// app) and, in AI.AGENT, that Xiaozhi is not in a conversation. Other apps get 409.
 bool is_home_only(Command command);
 
 /// Stable name used in logs and the status response.
@@ -94,6 +95,9 @@ const char* command_name(Command command);
 
 std::string error_json(std::string_view code, std::string_view message);
 std::string error_json_with_app(std::string_view code, std::string_view message, std::string_view current_app);
+/// 409 body for an avatar command refused while Xiaozhi is listening/speaking/connecting:
+/// {"error":"conversation_active","message":...,"current_app":...,"conversation":"<state>"}
+std::string error_json_conversation(std::string_view current_app, std::string_view conversation);
 std::string result_json(std::string_view command_id, std::string_view state);
 
 /// 2 hex chars per byte, lower case.

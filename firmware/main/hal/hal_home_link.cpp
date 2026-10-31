@@ -24,8 +24,11 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <mdns.h>
+#include <algorithm>
 #include <atomic>
+#include <functional>
 #include <mutex>
+#include <vector>
 
 using namespace home_link;
 using namespace stackchan;
@@ -36,6 +39,8 @@ static constexpr const char* _nvs_token  = "token";
 static constexpr const char* _nvs_enable = "enabled";
 static constexpr const char* _nvs_auto_home = "auto_home";
 static constexpr int kHomeAppIndex       = 7;
+static constexpr uint32_t kMotionHoldMs  = 10000;  // idle motion stays off this long after a LAN motion command
+static constexpr uint32_t kAngleSyncOffMs = 2000;  // auto angle sync is re-enabled this long after a LAN motion command
 
 namespace {
 
@@ -46,7 +51,9 @@ std::atomic<bool> _network_started_by_us{false};
 std::atomic<bool> _config_dirty{false};
 std::atomic<int> _pending_reboot{-1};
 std::atomic<uint32_t> _last_motion_tick{0};
+std::atomic<bool> _angle_sync_off_by_lan{false};
 std::atomic<bool> _home_active{false};
+std::atomic<bool> _control_ready{false};  // refreshed by the task: avatar commands would be accepted now
 std::string _current_app = "LAUNCHER";
 std::mutex _app_mutex;
 std::function<void()> _restore_default_modifiers;
@@ -70,6 +77,98 @@ bool enabled_setting()
 {
     Settings settings(_nvs_ns, false);
     return settings.GetBool(_nvs_enable, true);
+}
+
+/// Wraps a modifier added over the LAN so it can be told apart from Xiaozhi's own modifiers
+/// (pool ids are reused, so ids alone are not safe). All access happens under the LVGL lock.
+class LanModifier : public Modifier {
+public:
+    using Cancel = std::function<void(Modifiable&)>;
+    LanModifier(std::unique_ptr<Modifier> inner, Cancel cancel) : _inner(std::move(inner)), _cancel(std::move(cancel))
+    {
+        registry().push_back(this);
+    }
+    ~LanModifier() override
+    {
+        auto& r = registry();
+        r.erase(std::remove(r.begin(), r.end(), this), r.end());
+    }
+    void _update(Modifiable& sc) override
+    {
+        _inner->_update(sc);
+        if (_inner->isDestroyRequested()) requestDestroy();
+    }
+    /// Stop every LAN modifier (cancel hooks first), the pool frees them on the next update.
+    static size_t cancelAll(Modifiable& sc)
+    {
+        size_t n = 0;
+        for (auto* m : registry()) {
+            if (m->isDestroyRequested()) continue;
+            if (m->_cancel) m->_cancel(sc);
+            m->requestDestroy();
+            ++n;
+        }
+        return n;
+    }
+    static size_t count()
+    {
+        return registry().size();
+    }
+
+private:
+    static std::vector<LanModifier*>& registry()
+    {
+        static std::vector<LanModifier*> r;
+        return r;
+    }
+    std::unique_ptr<Modifier> _inner;
+    Cancel _cancel;
+};
+
+void add_lan_modifier(StackChan& sc, std::unique_ptr<Modifier> inner, LanModifier::Cancel cancel = nullptr)
+{
+    sc.addModifier(std::make_unique<LanModifier>(std::move(inner), std::move(cancel)));
+}
+
+enum class Control { None, Conversation, Ready };
+
+struct ControlState {
+    Control control = Control::None;
+    hal_bridge::XiaozhiActivity activity = hal_bridge::XiaozhiActivity::Off;
+};
+
+const char* control_name(Control c)
+{
+    switch (c) {
+        case Control::Ready: return "ready";
+        case Control::Conversation: return "conversation";
+        default: return "none";
+    }
+}
+
+/// Caller holds the LVGL lock. HOME: avatar always ours. AI.AGENT: avatar is Xiaozhi's; only drive it while idle.
+ControlState control_state(StackChan& sc)
+{
+    ControlState cs;
+    cs.activity = hal_bridge::xiaozhi_activity();
+    if (!sc.hasAvatar()) return cs;
+    if (!_home_active.load() && cs.activity == hal_bridge::XiaozhiActivity::Conversation) {
+        cs.control = Control::Conversation;
+        return cs;
+    }
+    cs.control = Control::Ready;
+    return cs;
+}
+
+/// Remember a LAN motion command: idle motion holds off for kMotionHoldMs; direct servo moves also
+/// pause auto angle sync for kAngleSyncOffMs (same as the HOME app did), dance keeps it on.
+void note_motion_command(motion::Motion& motion, bool pause_angle_sync)
+{
+    _last_motion_tick = GetHAL().millis();
+    if (pause_angle_sync) {
+        motion.setAutoAngleSyncEnabled(false);
+        _angle_sync_off_by_lan = true;
+    }
 }
 
 std::string status_json()
@@ -102,6 +201,13 @@ std::string status_json()
         doc["motion"]["moving"] = motion.isMoving();
         doc["motion"]["torque"] = motion.yawServo().getTorqueEnabled() || motion.pitchServo().getTorqueEnabled();
         doc["avatar_attached"]  = sc.hasAvatar();
+        const auto cs             = control_state(sc);
+        doc["app"]["control"]      = control_name(cs.control);
+        if (cs.activity == hal_bridge::XiaozhiActivity::Off) {
+            doc["app"]["conversation"] = nullptr;
+        } else {
+            doc["app"]["conversation"] = hal_bridge::xiaozhi_activity_name();
+        }
     }
     doc["audio"]["volume"]        = hal.getSpeakerVolume();
     doc["display"]["brightness"]  = hal.getBackLightBrightness();
@@ -153,11 +259,6 @@ HandlerResult handle_command(const Parsed& p)
     const auto& a = p.args;
     auto done     = [&](const char* state) { return json_result(200, result_json(p.command_id, state)); };
 
-    if (is_home_only(p.command) && !_home_active.load()) {
-        return json_result(409, error_json_with_app("home_app_not_active", "command needs the HOME app",
-                                                    hal.getCurrentAppName()));
-    }
-
     switch (p.command) {
         case Command::Status:
             return json_result(200, status_json());
@@ -189,13 +290,26 @@ HandlerResult handle_command(const Parsed& p)
             }
             _pending_reboot = kHomeAppIndex;
             return done("accepted");
-        case Command::Snapshot:
-            return snapshot_result();
         default:
             break;
     }
 
-    // HOME-only commands below: the avatar is attached while HOME is active.
+    // Avatar / motion / camera commands: need an avatar on screen (HOME or AI.AGENT) and, in AI.AGENT,
+    // Xiaozhi idle. Conversation wins: while it listens/speaks the console gets 409 and nothing moves.
+    {
+        LvglLockGuard lock;
+        const auto cs = control_state(GetStackChan());
+        if (cs.control == Control::None) {
+            return json_result(409, error_json_with_app("home_app_not_active",
+                                                        "no avatar on screen: open the HOME or AI.AGENT app",
+                                                        hal.getCurrentAppName()));
+        }
+        if (cs.control == Control::Conversation) {
+            return json_result(409, error_json_conversation(hal.getCurrentAppName(), hal_bridge::xiaozhi_activity_name()));
+        }
+    }
+    if (p.command == Command::Snapshot) return snapshot_result();  // camera capture stays outside the LVGL lock
+
     LvglLockGuard lock;
     auto& sc = GetStackChan();
     if (!sc.hasAvatar()) return json_result(409, error_json("home_app_not_active", "avatar not attached"));
@@ -204,31 +318,33 @@ HandlerResult handle_command(const Parsed& p)
         case Command::Avatar:
             sc.updateAvatarFromJson(a.raw_json.c_str());
             return done("completed");
-        case Command::Emotion:
+        case Command::Emotion: {
+            const auto emotion = emotion_from(a.emotion);
             if (a.duration_ms > 0) {
-                sc.addModifier(std::make_unique<TimedEmotionModifier>(emotion_from(a.emotion), a.duration_ms));
+                add_lan_modifier(sc, std::make_unique<TimedEmotionModifier>(emotion, a.duration_ms),
+                                 [](Modifiable& m) { if (m.hasAvatar()) m.avatar().setEmotion(avatar::Emotion::Neutral); });
             } else {
-                sc.avatar().setEmotion(emotion_from(a.emotion));
+                sc.avatar().setEmotion(emotion);
             }
             return done("completed");
+        }
         case Command::Speech:
-            sc.addModifier(std::make_unique<TimedSpeechModifier>(a.text, a.duration_ms));
-            sc.addModifier(std::make_unique<SpeakingModifier>(std::min<uint32_t>(a.duration_ms, 2000)));
+            add_lan_modifier(sc, std::make_unique<TimedSpeechModifier>(a.text, a.duration_ms),
+                             [](Modifiable& m) { if (m.hasAvatar()) m.avatar().clearSpeech(); });
+            add_lan_modifier(sc, std::make_unique<SpeakingModifier>(std::min<uint32_t>(a.duration_ms, 2000)),
+                             [](Modifiable& m) { if (m.hasAvatar()) m.avatar().mouth().setWeight(0); });
             return done("completed");
         case Command::Motion:
-            _last_motion_tick = hal.millis();
-            motion.setAutoAngleSyncEnabled(false);
+            note_motion_command(motion, true);
             if (a.pitch != -9999) motion.pitchServo().moveWithSpeed(a.pitch * 10, a.speed);
             if (a.yaw != -9999) motion.yawServo().moveWithSpeed(a.yaw * 10, a.speed);
             return done("accepted");
         case Command::MotionHome:
-            _last_motion_tick = hal.millis();
-            motion.setAutoAngleSyncEnabled(false);
+            note_motion_command(motion, true);
             motion.goHome(a.speed);
             return done("accepted");
         case Command::MotionLook:
-            _last_motion_tick = hal.millis();
-            motion.setAutoAngleSyncEnabled(false);
+            note_motion_command(motion, true);
             motion.lookAtNormalized(a.x, a.y, a.speed);
             return done("accepted");
         case Command::MotionTorque:
@@ -240,12 +356,19 @@ HandlerResult handle_command(const Parsed& p)
         case Command::Dance: {
             auto sequence = animation::parse_sequence_from_json(a.raw_json.c_str());
             if (sequence.empty()) return json_result(400, error_json("bad_request", "dance sequence could not be parsed"));
-            sc.addModifier(std::make_unique<DanceModifier>(sequence));
+            note_motion_command(motion, false);
+            add_lan_modifier(sc, std::make_unique<DanceModifier>(sequence));
             return done("accepted");
         }
         case Command::ClearModifiers:
-            sc.clearModifiers();
-            if (_restore_default_modifiers) _restore_default_modifiers();
+            if (_home_active.load()) {
+                // HOME: the avatar and all its modifiers are ours; start over with the defaults.
+                sc.clearModifiers();
+                if (_restore_default_modifiers) _restore_default_modifiers();
+            } else {
+                // AI.AGENT: Xiaozhi owns blink/breath/idle; only drop what the LAN added.
+                LanModifier::cancelAll(sc);
+            }
             return done("completed");
         default:
             return json_result(501, error_json("not_implemented", "unknown command"));
@@ -272,7 +395,7 @@ void start_mdns()
 void push_camera_frames()
 {
     auto fds = _server.cameraClients();
-    if (fds.empty() || !_home_active.load()) return;
+    if (fds.empty() || !_control_ready.load()) return;
     auto camera = hal_bridge::board_get_camera();
     if (!camera || !camera->StreamCaptures()) return;
     uint8_t* jpeg = nullptr;
@@ -283,6 +406,38 @@ void push_camera_frames()
         _server.sendBinary(fds, jpeg, len);
     }
     free(jpeg);
+}
+
+/// Runs every 200 ms on the Home Link task. Keeps the cached control state, hands the head back to
+/// Xiaozhi/HOME after a LAN motion command, and clears LAN modifiers the moment a conversation starts.
+void arbitrate(uint32_t now)
+{
+    static Control last_control = Control::None;
+    static bool was_conversation = false;
+    LvglLockGuard lock;
+    auto& sc      = GetStackChan();
+    const auto cs = control_state(sc);
+    _control_ready = cs.control == Control::Ready;
+
+    const bool conversation = cs.activity == hal_bridge::XiaozhiActivity::Conversation;
+    if (conversation && !was_conversation && !_home_active.load() && sc.hasAvatar()) {
+        const size_t n = LanModifier::cancelAll(sc);
+        if (n > 0) mclog::tagInfo(_tag, "conversation started, dropped {} LAN modifier(s)", n);
+        _last_motion_tick = 0;  // release the idle-motion hold too
+    }
+    was_conversation = conversation;
+
+    if (_angle_sync_off_by_lan.load() && now - _last_motion_tick.load() > kAngleSyncOffMs) {
+        _angle_sync_off_by_lan = false;
+        sc.motion().setAutoAngleSyncEnabled(true);
+    }
+
+    if (cs.control != last_control) {
+        last_control = cs.control;
+        if (_server.running() && _server.clientCount() > 0) {
+            _server.broadcast(std::string("{\"type\":\"control\",\"control\":\"") + control_name(cs.control) + "\"}");
+        }
+    }
 }
 
 void home_link_task(void*)
@@ -331,6 +486,7 @@ void home_link_task(void*)
         if (!_server.running()) continue;
 
         const uint32_t now = hal.millis();
+        arbitrate(now);
         if (now - last_status_push >= 5000) {
             last_status_push = now;
             if (_server.clientCount() > 0) {
@@ -457,6 +613,12 @@ bool Hal::isHomeAppActive()
 uint32_t Hal::homeLinkLastMotionTick()
 {
     return _last_motion_tick.load();
+}
+
+bool Hal::homeLinkMotionHoldActive()
+{
+    const uint32_t tick = _last_motion_tick.load();
+    return tick != 0 && millis() - tick < kMotionHoldMs;
 }
 
 bool Hal::consumeHomeLinkAutoOpenHome()
