@@ -48,6 +48,12 @@ public:
             return;
         }
 
+        // home-link fork: a LAN motion command holds the head for a while so idle motion does not undo it
+        if (GetHAL().homeLinkMotionHoldActive()) {
+            _next_tick = now + 500;
+            return;
+        }
+
         // 如果上次动作还没做完，就把下一次尝试推迟 500ms，避免指令堆积
         if (stackchan.motion().isMoving()) {
             _next_tick = now + 500;

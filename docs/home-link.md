@@ -8,29 +8,42 @@
 
 | 方法 路径 | 任何应用下 | 说明 |
 | --- | --- | --- |
-| `GET /v1/status` | 是 | 固件版本、`home_link_version`、运行时间、电量、Wi-Fi、当前应用、头部角度/是否移动/是否上力、音量、亮度、是否挂了 avatar |
+| `GET /v1/status` | 是 | 固件版本、`home_link_version`、运行时间、电量、Wi-Fi、当前应用（`app.name`、`app.home_active`、`app.control`、`app.conversation`）、头部角度/是否移动/是否上力、音量、亮度、是否挂了 avatar |
 | `POST /v1/system/reboot` | 是 | 重启回启动器（先回 `accepted`） |
 | `POST /v1/system/open-home` | 是 | 重启进 HOME 应用；已在 HOME 时直接 `completed` |
 | `POST /v1/audio/volume {volume}` | 是 | 0–100，持久化 |
 | `POST /v1/display/brightness {brightness}` | 是 | 0–100，持久化 |
 | `POST /v1/led {r,g,b}` / `{leds:[{index,r,g,b}]}` | 是 | 12 颗 WS2812，通道 0–168 |
 | `POST /v1/sound {name}` | 是 | `new_notification` / `camera_shutter` |
-| `POST /v1/avatar {leftEye,rightEye,mouth}` | 仅 HOME | 同 `updateAvatarFromJson` |
-| `POST /v1/avatar/emotion {emotion,duration_ms}` | 仅 HOME | `neutral/happy/angry/sad/doubt/sleepy`；默认 3000 ms，0 常驻 |
-| `POST /v1/avatar/speech {text,duration_ms}` | 仅 HOME | ≤120 字节，默认 6000 ms，附说话动画 |
-| `POST /v1/motion {yaw,pitch,speed}` | 仅 HOME | 度；yaw −128..128，pitch 0..90，speed 100–1000（默认 150） |
-| `POST /v1/motion/home {speed}` | 仅 HOME | 回零 |
-| `POST /v1/motion/look {x,y,speed}` | 仅 HOME | 归一化坐标 −1..1 |
-| `POST /v1/motion/torque {enabled}` | 仅 HOME | 舵机上/卸力 |
-| `POST /v1/neon {leftRgbColor,rightRgbColor,leftRgbDuration,rightRgbDuration}` | 仅 HOME | 同 `updateNeonLightFromJson` |
-| `POST /v1/dance [keyframes]` | 仅 HOME | 同跳舞序列 JSON（数组） |
-| `DELETE /v1/modifiers` | 仅 HOME | 清掉跳舞/定时表情，恢复默认空闲行为 |
-| `GET /v1/camera/snapshot` | 仅 HOME | 一帧 JPEG（实测 320×240，质量 20，约 2–5 KB） |
-| `WS /v1/events` | 是 | 每 5 秒 `{"type":"status","status":{...}}`；即时 `head_pet`、`imu`、`app`、`battery`；发 `{"type":"camera","enabled":true}` 后每 200 ms 收一帧二进制 JPEG（仅 HOME） |
+| `POST /v1/avatar {leftEye,rightEye,mouth}` | 需 avatar | 同 `updateAvatarFromJson` |
+| `POST /v1/avatar/emotion {emotion,duration_ms}` | 需 avatar | `neutral/happy/angry/sad/doubt/sleepy`；默认 3000 ms，0 常驻 |
+| `POST /v1/avatar/speech {text,duration_ms}` | 需 avatar | ≤120 字节，默认 6000 ms，附说话动画 |
+| `POST /v1/motion {yaw,pitch,speed}` | 需 avatar | 度；yaw −128..128，pitch 0..90，speed 100–1000（默认 150） |
+| `POST /v1/motion/home {speed}` | 需 avatar | 回零 |
+| `POST /v1/motion/look {x,y,speed}` | 需 avatar | 归一化坐标 −1..1 |
+| `POST /v1/motion/torque {enabled}` | 需 avatar | 舵机上/卸力 |
+| `POST /v1/neon {leftRgbColor,rightRgbColor,leftRgbDuration,rightRgbDuration}` | 需 avatar | 同 `updateNeonLightFromJson` |
+| `POST /v1/dance [keyframes]` | 需 avatar | 同跳舞序列 JSON（数组） |
+| `DELETE /v1/modifiers` | 需 avatar | 清掉跳舞/定时表情，恢复默认空闲行为 |
+| `GET /v1/camera/snapshot` | 需 avatar | 一帧 JPEG（实测 320×240，质量 20，约 2–5 KB） |
+| `WS /v1/events` | 是 | 每 5 秒 `{"type":"status","status":{...}}`；即时 `head_pet`、`imu`、`app`、`battery`；发 `{"type":"camera","enabled":true}` 后每 200 ms 收一帧二进制 JPEG（需 avatar） |
 
 写命令可带 `command_id`（8–64 位 `[A-Za-z0-9_.:-]`，首字符字母或数字），响应 `{"command_id":"...","state":"accepted"|"completed"}`。音量/亮度/灯/提示音/表情/文字/上卸力/灯带/清 modifier 同步生效（`completed`）；头部移动/回零/看向/跳舞/重启/进 HOME 异步（`accepted`），是否到位看 `status.motion.moving`。
 
-状态码：401 令牌错（`unauthorized`）、503 已关闭（`disabled`，此时服务不监听，表现为连接拒绝）、409 非 HOME 应用调 HOME 专属命令（`home_app_not_active`，附 `current_app`）、400 请求体超 4096 字节或字段非法（`bad_request`）、404 未知路径、405 方法不对。WS 客户端上限 4。
+「需 avatar」的命令（表情、文字、头部、看向、上/卸力、灯带、跳舞、清空、抓拍、实时帧）在 **HOME 应用和 AI.AGENT（小智）应用**下都可用，仲裁规则见下节；启动器、Setup、ESP-NOW 等没有 avatar 的应用下返回 409。
+
+状态码：401 令牌错（`unauthorized`）、503 已关闭（`disabled`，此时服务不监听，表现为连接拒绝）、409 当前应用没有 avatar（`home_app_not_active`，附 `current_app`）、409 小智正在对话（`conversation_active`，附 `current_app` 与 `conversation`）、400 请求体超 4096 字节或字段非法（`bad_request`）、404 未知路径、405 方法不对。WS 客户端上限 4。
+
+## 与小智（AI.AGENT）的仲裁：对话优先，空闲放行
+
+`1.6.0-home.2` 起，机器人停在 AI.AGENT 时局域网也能控制 avatar，规则固定为：
+
+- `status.app.control`：`ready`（avatar 命令现在会被接受）、`conversation`（有 avatar 但小智正在连接/聆听/说话，avatar 命令 409 `conversation_active`）、`none`（当前应用没有 avatar，avatar 命令 409 `home_app_not_active`）。`status.app.conversation` 是小智状态名（`idle`/`connecting`/`listening`/`speaking`/`starting`/…，非小智应用下为 `null`）。`control` 变化时事件流推 `{"type":"control","control":"ready"}`。
+- 小智空闲时局域网命令直接生效，与 HOME 下一致。头部/回零/看向之后 10 秒内小智的闲置头部动作暂停（`IdleMotionModifier` 让位），之后小智重新接管；自动角度同步在最后一条头部命令 2 秒后恢复。
+- 小智一进入对话（connecting/listening/speaking），固件立即取消局域网加上的跳舞、定时表情、定时文字与嘴型动画（表情回 neutral、文字清空、嘴闭合），不排队、不恢复；对话中的 avatar 命令一律 409 `conversation_active`，音量/亮度/12 颗灯/提示音/重启/进 HOME 不受影响。
+- `DELETE /v1/modifiers` 在 HOME 下仍是全清并恢复默认空闲行为；在 AI.AGENT 下只清局域网加上的动作，不碰小智自己的眨眼、呼吸、摸头、闲置动作。
+- 抓拍/实时帧同样只在 `control=ready` 时可用；小智的拍照工具只在对话中调用，所以不会与它抢摄像头。
+- 常驻表情（`duration_ms=0`）、avatar 几何、灯带在 AI.AGENT 下直接改当前状态，之后由小智服务端下发的表情覆盖，固件不恢复。
 
 ## 令牌与开关
 
@@ -40,7 +53,7 @@
 
 - 固件启动进入启动器后，Home Link 任务会主动连接已保存的 Wi-Fi（出厂固件在启动器里不连网），连上后开 8700。AI Agent 开机自启时由小智连网，Home Link 复用。
 - 进入 ESP-NOW 应用时停止 Home Link 并断开站点模式（两者争用信道）；退出回启动器后自动恢复。
-- `GET /v1/status` 与任何应用下的命令随时可用；HOME 专属命令要先进入 HOME 应用（主菜单最后一个图标，或 `POST /v1/system/open-home`）。
+- `GET /v1/status` 与任何应用下的命令随时可用；需 avatar 的命令在 HOME 或 AI.AGENT 下可用（AI.AGENT 下要小智空闲），其它应用要先 `POST /v1/system/open-home` 进 HOME（主菜单最后一个图标）。
 - mDNS：主机名 `stackchan-<MAC 后 4 位>.local`，服务 `_stackchan-home._tcp`。
 
 ## 构建、烧录、恢复
@@ -60,7 +73,7 @@ cd firmware && cmake -S tests -B build-host-tests && cmake --build build-host-te
 
 ## 版本
 
-`PROJECT_VER` 为 `1.6.0-home.N`，每次合入 `home-link` 分支发布时递增 N。`home_link_version` 只在接口不兼容时递增。
+`PROJECT_VER` 为 `1.6.0-home.N`，每次合入 `home-link` 分支发布时递增 N（`home.1` 首版；`home.2` AI.AGENT 下可控与仲裁）。`home_link_version` 只在接口不兼容时递增。
 
 ## 整机验收清单
 
@@ -68,7 +81,10 @@ cd firmware && cmake -S tests -B build-host-tests && cmake --build build-host-te
 - [ ] 断开路由器 Wi-Fi 30 秒再恢复：状态 200 恢复，令牌不变
 - [ ] AI Agent 对话中 `POST /v1/led` 生效且对话继续；AI Agent 能否正常唤醒对话（记录结果）
 - [ ] HOME 下表情/文字/头部/灯带/跳舞/清空/抓拍各一次
-- [ ] 非 HOME 下 HOME 命令 409
+- [ ] AI.AGENT 空闲下表情/文字/头部/看向/灯带/跳舞/清空/抓拍各一次，`status.app.control` 为 `ready`
+- [ ] AI.AGENT 对话中（唤醒后说话）avatar 命令 409 `conversation_active`，`status.app.control` 为 `conversation`；对话开始时正在跳舞/定时文字被取消；对话结束后又可控制
+- [ ] AI.AGENT 下头部命令后 10 秒内头不被闲置动作拉回
+- [ ] 启动器/Setup 下 avatar 命令 409 `home_app_not_active`
 - [ ] 错令牌 401、超长 body 400、未知路径 404
 - [ ] 两客户端并发 `motion` 各 50 次无重启
 - [ ] Setup 页重新生成与关闭

@@ -327,6 +327,7 @@ public:
     void setHomeAppActive(bool active, std::function<void()> restoreDefaultModifiers);
     bool isHomeAppActive();
     uint32_t homeLinkLastMotionTick();
+    bool homeLinkMotionHoldActive();  // true for 10 s after a LAN motion command: idle motion keeps off
     bool homeLinkStartedNetwork();
     bool consumeHomeLinkAutoOpenHome();  // set by POST /v1/system/open-home before the warm reboot
 
